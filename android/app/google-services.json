@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "419097967193",
+    "project_id": "basurawatch-davao-2026",
+    "storage_bucket": "basurawatch-davao-2026.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:419097967193:android:7c811ccbb2e44c81714f48",
+        "android_client_info": {
+          "package_name": "com.example.basura_watch_finalproject"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "419097967193-fb7ptiqgdeqrl94lqdu0ehjjh1banhg2.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDj7Ax-5XNTt8vjeHNJYBkqpcU6GSHkMbg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "419097967193-fb7ptiqgdeqrl94lqdu0ehjjh1banhg2.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
