@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'login_screen.dart';
+import 'notify.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -18,16 +19,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _loading = false;
   bool _hidePassword = true;
 
-  void _msg(String text) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(text),
-        backgroundColor: Colors.red.shade700,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _loading = true);
@@ -37,10 +28,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
         password: _password.text.trim(),
       );
       if (mounted) Navigator.pop(context);
+      notifySuccess('Account created successfully. Welcome to BasuraWatch!');
     } on FirebaseAuthException catch (e) {
-      _msg(friendlyAuthError(e));
+      notifyError(friendlyAuthError(e));
     } catch (e) {
-      _msg('Something went wrong. Please try again.');
+      notifyError('Something went wrong. Please try again.');
     }
     if (mounted) setState(() => _loading = false);
   }

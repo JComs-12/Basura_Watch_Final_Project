@@ -197,6 +197,9 @@ class _SubmitReportScreenState extends State<SubmitReportScreen> {
         'imageUrl': urls.first,
         'imageUrls': urls,
         'status': ReportStatus.pending.label,
+        'statusHistory': [
+          {'status': ReportStatus.pending.label, 'at': Timestamp.now()},
+        ],
         'createdAt': FieldValue.serverTimestamp(),
       });
       if (!mounted) return;
