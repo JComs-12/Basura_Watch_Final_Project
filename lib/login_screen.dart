@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'app_logo.dart';
+import 'notify.dart';
 import 'register_screen.dart';
 
 String friendlyAuthError(FirebaseAuthException e) {
@@ -44,24 +45,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
   static bool _googleReady = false;
 
-  void _msg(String text) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(text),
-        backgroundColor: Colors.red.shade700,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
   Future<void> _run(Future<void> Function() action, String fallback) async {
     setState(() => _loading = true);
     try {
       await action();
+      if (FirebaseAuth.instance.currentUser != null) {
+        notifySuccess('Logged in successfully. Welcome back!');
+      }
     } on FirebaseAuthException catch (e) {
-      _msg(friendlyAuthError(e));
+      notifyError(friendlyAuthError(e));
     } catch (e) {
-      _msg(fallback);
+      notifyError(fallback);
     }
     if (mounted) setState(() => _loading = false);
   }

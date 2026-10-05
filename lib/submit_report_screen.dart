@@ -1,17 +1,21 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'report_enums.dart';
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
+import 'report_enums.dart';
+import 'image_gallery.dart';
+import 'notify.dart';
+
 const cloudName = 'l8mrm6wy';
 const uploadPreset = 'basurawatch_preset';
+const maxPhotos = 5;
 
 class SubmitReportScreen extends StatefulWidget {
   const SubmitReportScreen({super.key});
@@ -26,46 +30,87 @@ class _SubmitReportScreenState extends State<SubmitReportScreen> {
   final _description = TextEditingController();
 
   ReportCategory? _category;
-  File? _image;
+  final List<File> _images = [];
   double? _lat;
   double? _lng;
   bool _loading = false;
   bool _photoError = false;
 
-  void _msg(String text, {bool error = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(text),
-        backgroundColor: error ? Colors.red.shade700 : null,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
-  Future<void> _pickImage(ImageSource source) async {
+  Future<void> _fromCamera() async {
+    if (_images.length >= maxPhotos) {
+      notifyInfo('You can add up to $maxPhotos photos.');
+      return;
+    }
     try {
-      final picked = await ImagePicker().pickImage(
-        source: source,
+      final p = await ImagePicker().pickImage(
+        source: ImageSource.camera,
         imageQuality: 70,
       );
-      if (picked != null) {
+      if (p != null) {
         setState(() {
-          _image = File(picked.path);
+          _images.add(File(p.path));
           _photoError = false;
         });
       }
-    } catch (e) {
-      _msg(
-        'Could not open ${source == ImageSource.camera ? 'camera' : 'gallery'}. Try the other option.',
-        error: true,
-      );
+    } catch (_) {
+      notifyError('Could not open the camera. Try the gallery instead.');
     }
+  }
+
+  Future<void> _fromGallery() async {
+    final remaining = maxPhotos - _images.length;
+    if (remaining <= 0) {
+      notifyInfo('You can add up to $maxPhotos photos.');
+      return;
+    }
+    try {
+      final picker = ImagePicker();
+      List<XFile> picked;
+      if (remaining >= 2) {
+        picked = await picker.pickMultiImage(
+          imageQuality: 70,
+          limit: remaining,
+        );
+      } else {
+        final one = await picker.pickImage(
+          source: ImageSource.gallery,
+          imageQuality: 70,
+        );
+        picked = one == null ? [] : [one];
+      }
+      if (picked.isEmpty) return;
+      if (picked.length > remaining) {
+        notifyInfo(
+          'Only $maxPhotos photos allowed. Extra photos were skipped.',
+        );
+      }
+      setState(() {
+        _images.addAll(picked.take(remaining).map((x) => File(x.path)));
+        _photoError = false;
+      });
+    } catch (_) {
+      notifyError('Could not open the gallery. Please try again.');
+    }
+  }
+
+  void _remove(int i) => setState(() => _images.removeAt(i));
+
+  void _preview(int i) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FullScreenGallery(
+          images: _images.map<ImageProvider>((f) => FileImage(f)).toList(),
+          initialIndex: i,
+        ),
+      ),
+    );
   }
 
   Future<void> _getLocation() async {
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
-        _msg('Please turn on your GPS', error: true);
+        notifyError('Please turn on your GPS');
         return;
       }
       var perm = await Geolocator.checkPermission();
@@ -74,7 +119,7 @@ class _SubmitReportScreenState extends State<SubmitReportScreen> {
       }
       if (perm == LocationPermission.denied ||
           perm == LocationPermission.deniedForever) {
-        _msg('Location permission denied', error: true);
+        notifyError('Location permission denied');
         return;
       }
       final pos = await Geolocator.getCurrentPosition();
@@ -82,9 +127,35 @@ class _SubmitReportScreenState extends State<SubmitReportScreen> {
         _lat = pos.latitude;
         _lng = pos.longitude;
       });
-      _msg('Location captured');
+
+      try {
+        final geocoding = Geocoding();
+        final places = await geocoding.placemarkFromCoordinates(
+          pos.latitude,
+          pos.longitude,
+        );
+        if (places.isNotEmpty) {
+          final p = places.first;
+          final parts = <String>[];
+          for (final String? s in [
+            p.street,
+            p.subLocality,
+            p.locality,
+            p.administrativeArea,
+          ]) {
+            final t = s?.trim() ?? '';
+            if (t.isNotEmpty && !parts.contains(t)) parts.add(t);
+          }
+          if (parts.isNotEmpty) {
+            setState(() => _locationText.text = parts.join(', '));
+          }
+        }
+        notifySuccess('Location captured');
+      } catch (_) {
+        notifyInfo('GPS saved, but the address was not found. Please type it.');
+      }
     } catch (e) {
-      _msg('Could not get location. Please try again.', error: true);
+      notifyError('Could not get location. Please try again.');
     }
   }
 
@@ -105,17 +176,17 @@ class _SubmitReportScreenState extends State<SubmitReportScreen> {
 
   Future<void> _submit() async {
     final formOk = _formKey.currentState!.validate();
-    final photoOk = _image != null;
+    final photoOk = _images.isNotEmpty;
     setState(() => _photoError = !photoOk);
 
     if (!formOk || !photoOk) {
-      _msg('Please fill in the fields marked in red', error: true);
+      notifyError('Please fill in the fields marked in red');
       return;
     }
 
     setState(() => _loading = true);
     try {
-      final imageUrl = await _uploadImage(_image!);
+      final urls = await Future.wait(_images.map(_uploadImage));
       await FirebaseFirestore.instance.collection('reports').add({
         'userId': FirebaseAuth.instance.currentUser!.uid,
         'category': _category!.label,
@@ -123,22 +194,64 @@ class _SubmitReportScreenState extends State<SubmitReportScreen> {
         'locationText': _locationText.text.trim(),
         'latitude': _lat,
         'longitude': _lng,
-        'imageUrl': imageUrl,
+        'imageUrl': urls.first,
+        'imageUrls': urls,
         'status': ReportStatus.pending.label,
         'createdAt': FieldValue.serverTimestamp(),
       });
       if (!mounted) return;
-      _msg('Report submitted!');
       Navigator.pop(context);
+      notifySuccess('Report submitted successfully!');
+      return;
     } catch (e) {
-      _msg('Error: $e', error: true);
+      notifyError(
+        'Could not submit the report. Check your internet and try again.',
+      );
     }
     if (mounted) setState(() => _loading = false);
+  }
+
+  Widget _thumb(int i) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 10),
+      child: Stack(
+        children: [
+          GestureDetector(
+            onTap: () => _preview(i),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.file(
+                _images[i],
+                width: 100,
+                height: 100,
+                fit: BoxFit.cover,
+              ),
+            ),
+          ),
+          Positioned(
+            top: 4,
+            right: 4,
+            child: GestureDetector(
+              onTap: () => _remove(i),
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: const BoxDecoration(
+                  color: Colors.black54,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close, size: 16, color: Colors.white),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final borderColor = _photoError ? Colors.red : Colors.grey.shade300;
+    final full = _images.length >= maxPhotos;
     return Scaffold(
       appBar: AppBar(title: const Text('Submit Report')),
       body: SingleChildScrollView(
@@ -149,7 +262,7 @@ class _SubmitReportScreenState extends State<SubmitReportScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Container(
-                height: 200,
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   border: Border.all(
@@ -158,40 +271,66 @@ class _SubmitReportScreenState extends State<SubmitReportScreen> {
                   ),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: _image == null
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.add_a_photo_outlined,
-                              size: 40,
-                              color: _photoError ? Colors.red : Colors.grey,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'No photo yet',
-                              style: TextStyle(
-                                color: _photoError ? Colors.red : Colors.grey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Photos (${_images.length}/$maxPhotos)',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        if (_images.isNotEmpty)
+                          const Text(
+                            'Tap a photo to preview',
+                            style: TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      height: 100,
+                      child: _images.isEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.add_a_photo_outlined,
+                                    size: 36,
+                                    color: _photoError
+                                        ? Colors.red
+                                        : Colors.grey,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Add up to $maxPhotos photos',
+                                    style: TextStyle(
+                                      color: _photoError
+                                          ? Colors.red
+                                          : Colors.grey,
+                                    ),
+                                  ),
+                                ],
                               ),
+                            )
+                          : ListView(
+                              scrollDirection: Axis.horizontal,
+                              children: [
+                                for (var i = 0; i < _images.length; i++)
+                                  _thumb(i),
+                              ],
                             ),
-                          ],
-                        ),
-                      )
-                    : ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.file(
-                          _image!,
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                        ),
-                      ),
+                    ),
+                  ],
+                ),
               ),
               if (_photoError)
                 const Padding(
                   padding: EdgeInsets.only(top: 6, left: 12),
                   child: Text(
-                    'A photo is required',
+                    'At least one photo is required',
                     style: TextStyle(color: Colors.red, fontSize: 12),
                   ),
                 ),
@@ -200,7 +339,7 @@ class _SubmitReportScreenState extends State<SubmitReportScreen> {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () => _pickImage(ImageSource.camera),
+                      onPressed: full ? null : _fromCamera,
                       icon: const Icon(Icons.camera_alt),
                       label: const Text('Camera'),
                     ),
@@ -208,8 +347,8 @@ class _SubmitReportScreenState extends State<SubmitReportScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () => _pickImage(ImageSource.gallery),
-                      icon: const Icon(Icons.photo),
+                      onPressed: full ? null : _fromGallery,
+                      icon: const Icon(Icons.photo_library),
                       label: const Text('Gallery'),
                     ),
                   ),
@@ -243,11 +382,11 @@ class _SubmitReportScreenState extends State<SubmitReportScreen> {
               TextFormField(
                 controller: _locationText,
                 decoration: const InputDecoration(
-                  labelText: 'Street / Barangay',
+                  labelText: 'Address',
                   prefixIcon: Icon(Icons.place_outlined),
                 ),
                 validator: (v) => (v == null || v.trim().isEmpty)
-                    ? 'Street or barangay is required'
+                    ? 'Address is required'
                     : null,
               ),
               const SizedBox(height: 8),
@@ -271,7 +410,18 @@ class _SubmitReportScreenState extends State<SubmitReportScreen> {
               ),
               const SizedBox(height: 24),
               _loading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? Center(
+                      child: Column(
+                        children: [
+                          const CircularProgressIndicator(),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Uploading ${_images.length} photo(s)...',
+                            style: const TextStyle(color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    )
                   : FilledButton.icon(
                       onPressed: _submit,
                       icon: const Icon(Icons.send),

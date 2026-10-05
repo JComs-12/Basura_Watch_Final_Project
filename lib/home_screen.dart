@@ -8,6 +8,7 @@ import 'my_reports_screen.dart';
 import 'report_details_screen.dart';
 import 'report_enums.dart';
 import 'app_logo.dart';
+import 'notify.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -60,6 +61,7 @@ class HomeScreen extends StatelessWidget {
         await GoogleSignIn.instance.signOut();
       } catch (_) {}
       await FirebaseAuth.instance.signOut();
+      notifySuccess('Logged out successfully');
     }
   }
 

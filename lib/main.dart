@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import 'login_screen.dart';
 import 'home_screen.dart';
+import 'notify.dart';
 
 import 'firebase_options.dart';
 
@@ -21,6 +22,7 @@ class BasuraWatchApp extends StatelessWidget {
     return MaterialApp(
       title: 'BasuraWatch Davao',
       debugShowCheckedModeBanner: false,
+      scaffoldMessengerKey: messengerKey,
       theme: ThemeData(
         useMaterial3: true,
         colorSchemeSeed: const Color(0xFF2E7D32),
@@ -38,7 +40,23 @@ class BasuraWatchApp extends StatelessWidget {
           fillColor: Colors.white,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFF2E7D32), width: 2),
+          ),
+          errorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Colors.red),
+          ),
+          focusedErrorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Colors.red, width: 2),
           ),
         ),
         filledButtonTheme: FilledButtonThemeData(
